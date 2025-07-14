@@ -13,7 +13,8 @@
       "color": "#ffffff",
       "sounds": [
         "./assets/notification-sound.wav"
-      ]
+      ],
+      "vapidPublicKey": "YOUR_VAPID_PUBLIC_KEY"
     },
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -55,8 +56,5 @@
       }
     },
     "owner": "sheece"
-  },
-  "notification": {
-    "vapidPublicKey": "YOUR_VAPID_PUBLIC_KEY"
   }
 }

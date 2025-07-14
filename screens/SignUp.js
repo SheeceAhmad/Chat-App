@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import {View, TextInput, Button, Text, Alert, ScrollView, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, Image, Modal} from 'react-native';
 import { useFonts, Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold, Poppins_700Bold } from '@expo-google-fonts/poppins';
 import supabase from '../supabase/supabaseClient';
+import { ThemeContext } from '../context/ThemeContext';
 
 // Common country codes
 const countryCodes = [
@@ -28,6 +29,7 @@ export default function SignupScreen({ navigation }) {
   const [focusedInput, setFocusedInput] = useState(null);
   const [countryCode, setCountryCode] = useState('91');
   const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const { darkMode } = useContext(ThemeContext);
 
   const [fontsLoaded] = useFonts({
     'Poppins-Regular': Poppins_400Regular,
@@ -93,50 +95,140 @@ const handleSignup = async () => {
   }
 };
 
+const dynamicStyles = {
+  container: {
+    flex: 1,
+    backgroundColor: darkMode ? '#18181b' : '#fff',
+  },
+  scrollContainer: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: 20,
+    paddingBottom: 40,
+    backgroundColor: darkMode ? '#18181b' : '#fff',
+  },
+  formContainer: {
+    backgroundColor: darkMode ? '#23232b' : '#f8fafc',
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOpacity: darkMode ? 0.3 : 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  logoText: {
+    fontSize: 32,
+    fontFamily: 'Poppins-Bold',
+    color: darkMode ? '#f1f5f9' : '#4f46e5',
+  },
+  title: {
+    fontSize: 24,
+    fontFamily: 'Poppins-SemiBold',
+    color: darkMode ? '#f1f5f9' : '#1a1a1a',
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 16,
+    fontFamily: 'Poppins-Regular',
+    color: darkMode ? '#a1a1aa' : '#64748b',
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 14,
+    fontFamily: 'Poppins-Medium',
+    color: darkMode ? '#a1a1aa' : '#334155',
+    marginBottom: 4,
+  },
+  input: {
+    backgroundColor: darkMode ? '#23232b' : '#fff',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    height: 48,
+    fontSize: 16,
+    fontFamily: 'Poppins-Regular',
+    color: darkMode ? '#f1f5f9' : '#1a1a1a',
+    borderWidth: 1,
+    borderColor: darkMode ? '#4b5563' : '#e2e8f0',
+  },
+  phoneNumberInput: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: 'Poppins-Regular',
+    color: darkMode ? '#f1f5f9' : '#1a1a1a',
+    height: 48,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    backgroundColor: darkMode ? '#23232b' : '#fff',
+  },
+  phoneInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: darkMode ? '#23232b' : '#fff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: darkMode ? '#4b5563' : '#e2e8f0',
+    height: 48,
+    paddingHorizontal: 8,
+  },
+  countryCodeButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 8,
+    borderRadius: 8,
+    backgroundColor: darkMode ? '#374151' : '#f1f5f9',
+  },
+  countryCodeText: {
+    fontSize: 16,
+    fontFamily: 'Poppins-Medium',
+    color: darkMode ? '#f1f5f9' : '#1e293b',
+  },
+  // ...add more dynamic styles as needed for text, backgrounds, etc...
+};
 
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
+      style={dynamicStyles.container}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+      <ScrollView contentContainerStyle={dynamicStyles.scrollContainer}>
         <View style={styles.headerContainer}>
           <View style={styles.logoContainer}>
-            <Text style={styles.logoText}>ChatApp</Text>
+            <Text style={dynamicStyles.logoText}>ChatApp</Text>
           </View>
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Join our community today</Text>
+          <Text style={dynamicStyles.title}>Create Account</Text>
+          <Text style={dynamicStyles.subtitle}>Join our community today</Text>
         </View>
 
-        <View style={styles.formContainer}>
+        <View style={dynamicStyles.formContainer}>
           <View style={styles.inputRow}>
             <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-              <Text style={styles.label}>First Name</Text>
+              <Text style={dynamicStyles.label}>First Name</Text>
               <TextInput
                 style={[
-                  styles.input,
+                  dynamicStyles.input,
                   focusedInput === 'firstName' && styles.inputFocused
                 ]}
                 value={firstName}
                 onChangeText={setFirstName}
                 placeholder="John"
-                placeholderTextColor={'#94a3b8'}
+                placeholderTextColor={darkMode ? '#a1a1aa' : '#94a3b8'}
                 onFocus={() => setFocusedInput('firstName')}
                 onBlur={() => setFocusedInput(null)}
               />
             </View>
 
             <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
-              <Text style={styles.label}>Last Name</Text>
+              <Text style={dynamicStyles.label}>Last Name</Text>
               <TextInput
                 style={[
-                  styles.input,
+                  dynamicStyles.input,
                   focusedInput === 'lastName' && styles.inputFocused
                 ]}
                 value={lastName}
                 onChangeText={setLastName}
                 placeholder="Doe"
-                placeholderTextColor={'#94a3b8'}
+                placeholderTextColor={darkMode ? '#a1a1aa' : '#94a3b8'}
                 onFocus={() => setFocusedInput('lastName')}
                 onBlur={() => setFocusedInput(null)}
               />
@@ -144,40 +236,40 @@ const handleSignup = async () => {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Username</Text>
+            <Text style={dynamicStyles.label}>Username</Text>
             <TextInput
               style={[
-                styles.input,
+                dynamicStyles.input,
                 focusedInput === 'username' && styles.inputFocused
               ]}
               value={username}
               onChangeText={setUsername}
               placeholder="johndoe123"
-              placeholderTextColor={'#94a3b8'}
+              placeholderTextColor={darkMode ? '#a1a1aa' : '#94a3b8'}
               onFocus={() => setFocusedInput('username')}
               onBlur={() => setFocusedInput(null)}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Phone</Text>
-            <View style={styles.phoneInputContainer}>
+            <Text style={dynamicStyles.label}>Phone</Text>
+            <View style={dynamicStyles.phoneInputContainer}>
               <TouchableOpacity
-                style={styles.countryCodeButton}
+                style={dynamicStyles.countryCodeButton}
                 onPress={() => setShowCountryPicker(true)}
               >
-                <Text style={styles.countryCodeText}>+{countryCode}</Text>
+                <Text style={dynamicStyles.countryCodeText}>+{countryCode}</Text>
               </TouchableOpacity>
               <TextInput
                 style={[
-                  styles.phoneNumberInput,
+                  dynamicStyles.phoneNumberInput,
                   focusedInput === 'phone' && styles.inputFocused
                 ]}
                 value={phoneNumber}
                 onChangeText={setPhoneNumber}
                 keyboardType="phone-pad"
                 placeholder="300 1234567"
-                placeholderTextColor={'#94a3b8'}
+                placeholderTextColor={darkMode ? '#a1a1aa' : '#94a3b8'}
                 onFocus={() => setFocusedInput('phone')}
                 onBlur={() => setFocusedInput(null)}
               />
@@ -222,15 +314,15 @@ const handleSignup = async () => {
           </Modal>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Gender</Text>
+            <Text style={dynamicStyles.label}>Gender</Text>
             <TextInput
               style={[
-                styles.input,
+                dynamicStyles.input,
                 focusedInput === 'gender' && styles.inputFocused
               ]}
               value={gender}
               onChangeText={setGender}
-              placeholderTextColor={'#94a3b8'}
+              placeholderTextColor={darkMode ? '#a1a1aa' : '#94a3b8'}
               placeholder="Male / Female / Other"
               onFocus={() => setFocusedInput('gender')}
               onBlur={() => setFocusedInput(null)}
@@ -238,10 +330,10 @@ const handleSignup = async () => {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email</Text>
+            <Text style={dynamicStyles.label}>Email</Text>
             <TextInput
               style={[
-                styles.input,
+                dynamicStyles.input,
                 focusedInput === 'email' && styles.inputFocused
               ]}
               value={email}
@@ -250,24 +342,24 @@ const handleSignup = async () => {
               autoCapitalize="none"
               autoCorrect={false}
               placeholder="example@email.com"
-              placeholderTextColor={'#94a3b8'}
+              placeholderTextColor={darkMode ? '#a1a1aa' : '#94a3b8'}
               onFocus={() => setFocusedInput('email')}
               onBlur={() => setFocusedInput(null)}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Password</Text>
+            <Text style={dynamicStyles.label}>Password</Text>
             <TextInput
               style={[
-                styles.input,
+                dynamicStyles.input,
                 focusedInput === 'password' && styles.inputFocused
               ]}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
               placeholder="Minimum 6 characters"
-              placeholderTextColor={'#94a3b8'}
+              placeholderTextColor={darkMode ? '#a1a1aa' : '#94a3b8'}
               onFocus={() => setFocusedInput('password')}
               onBlur={() => setFocusedInput(null)}
             />
@@ -298,92 +390,57 @@ const handleSignup = async () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#fff',
   },
   scrollContainer: {
     flexGrow: 1,
-    padding: 24,
+    justifyContent: 'center',
+    padding: 20,
+    paddingBottom: 40,
   },
   headerContainer: {
-    marginBottom: 32,
     alignItems: 'center',
-    marginTop: 40,
+    marginBottom: 24,
   },
   logoContainer: {
-    marginBottom: 24,
+    marginBottom: 8,
   },
   logoText: {
     fontSize: 32,
     fontFamily: 'Poppins-Bold',
     color: '#4f46e5',
-    letterSpacing: 1,
   },
   title: {
-    fontSize: 28,
-    fontFamily: 'Poppins-Bold',
+    fontSize: 24,
+    fontFamily: 'Poppins-SemiBold',
     color: '#1a1a1a',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   subtitle: {
     fontSize: 16,
     fontFamily: 'Poppins-Regular',
     color: '#64748b',
-    textAlign: 'center',
+    marginBottom: 16,
   },
   formContainer: {
-    backgroundColor: '#ffffff',
-    borderRadius: 24,
-    padding: 28,
+    backgroundColor: '#f8fafc',
+    borderRadius: 16,
+    padding: 20,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   inputRow: {
     flexDirection: 'row',
-    marginBottom: 20,
+    marginBottom: 10,
   },
   inputGroup: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 14,
-    fontFamily: 'Poppins-SemiBold',
-    color: '#1a1a1a',
-    marginBottom: 8,
-    marginLeft: 4,
-  },
-  input: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1.5,
-    borderColor: '#e2e8f0',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 16,
-    fontSize: 16,
-    fontFamily: 'Poppins-Regular',
-    color: '#1a1a1a',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    marginVertical: 10,
   },
   inputFocused: {
-    borderColor: '#7c3aed',
-    borderWidth: 2,
-    shadowColor: '#7c3aed',
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
-    backgroundColor: '#faf5ff',
+    borderColor: '#4f46e5',
+    backgroundColor: '#f1f5f9',
   },
   button: {
     backgroundColor: '#4f46e5',
@@ -422,32 +479,24 @@ const styles = StyleSheet.create({
   phoneInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  countryCodeButton: {
-    backgroundColor: '#f8fafc',
-    padding: 16,
-    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    minWidth: 80,
-    alignItems: 'center',
+    height: 48,
+    paddingHorizontal: 8,
+  },
+  countryCodeButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 8,
+    borderRadius: 8,
+    backgroundColor: '#f1f5f9',
   },
   countryCodeText: {
     fontSize: 16,
-    fontFamily: 'Poppins-Regular',
-    color: '#1a1a1a',
-  },
-  phoneNumberInput: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    fontFamily: 'Poppins-Regular',
-    color: '#1a1a1a',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    fontFamily: 'Poppins-Medium',
+    color: '#1e293b',
   },
   modalOverlay: {
     flex: 1,

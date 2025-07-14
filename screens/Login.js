@@ -1,14 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { View, TouchableOpacity, TextInput, Button, Text, Alert, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { useFonts, Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold, Poppins_700Bold } from '@expo-google-fonts/poppins';
 import supabase from '../supabase/supabaseClient';
 import Toast from 'react-native-root-toast';
+import { ThemeContext } from '../context/ThemeContext';
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [focusedInput, setFocusedInput] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const { darkMode } = useContext(ThemeContext);
 
   const [fontsLoaded] = useFonts({
     'Poppins-Regular': Poppins_400Regular,
@@ -94,23 +96,93 @@ export default function LoginScreen({ navigation }) {
       showToast('An unexpected error occurred. Please try again');
     } finally {
       setIsLoading(false);
-    }
+      }
+  };
+
+  const dynamicStyles = {
+    container: {
+      flex: 1,
+      backgroundColor: darkMode ? '#18181b' : '#fff',
+    },
+    formContainer: {
+      flex: 1,
+      padding: 20,
+      justifyContent: 'center',
+      backgroundColor: darkMode ? '#23232b' : '#fff',
+    },
+    title: {
+      fontSize: 32,
+      fontFamily: 'Poppins-Bold',
+      color: darkMode ? '#f1f5f9' : '#1a1a1a',
+      marginBottom: 8,
+      textAlign: 'center',
+    },
+    subtitle: {
+      fontSize: 16,
+      fontFamily: 'Poppins-Regular',
+      color: darkMode ? '#a1a1aa' : '#64748b',
+      marginBottom: 32,
+      textAlign: 'center',
+    },
+    inputContainer: {
+      marginBottom: 20,
+    },
+    input: {
+      backgroundColor: darkMode ? '#23232b' : '#f8fafc',
+      borderRadius: 10,
+      paddingVertical: 10,
+      paddingHorizontal: 16,
+      fontSize: 16,
+      fontFamily: 'Poppins-Regular',
+      color: darkMode ? '#f1f5f9' : '#1a1a1a',
+      borderWidth: 1,
+      height: 48,
+      borderColor: darkMode ? '#4b5563' : '#e2e8f0',
+    },
+    inputFocused: {
+      borderColor: '#4f46e5',
+    },
+    loginButton: {
+      backgroundColor: '#4f46e5',
+      borderRadius: 12,
+      padding: 16,
+      alignItems: 'center',
+      marginTop: 24,
+      marginBottom: 16,
+    },
+    loginButtonDisabled: {
+      opacity: 0.7,
+    },
+    loginButtonText: {
+      color: '#ffffff',
+      fontSize: 16,
+      fontFamily: 'Poppins-SemiBold',
+    },
+    signupButton: {
+      alignItems: 'center',
+      padding: 16,
+    },
+    signupButtonText: {
+      color: darkMode ? '#a1a1aa' : '#64748b',
+      fontSize: 16,
+      fontFamily: 'Poppins-Regular',
+    },
   };
 
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
+      style={dynamicStyles.container}
     >
-      <View style={styles.formContainer}>
-          <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>Sign in to continue</Text>
+      <View style={dynamicStyles.formContainer}>
+        <Text style={dynamicStyles.title}>Welcome Back</Text>
+        <Text style={dynamicStyles.subtitle}>Sign in to continue</Text>
 
-        <View style={styles.inputContainer}>
+        <View style={dynamicStyles.inputContainer}>
             <TextInput
             style={[
-              styles.input,
-              focusedInput === 'email' && styles.inputFocused
+              dynamicStyles.input,
+              focusedInput === 'email' && dynamicStyles.inputFocused
             ]}
             placeholder="Email"
               value={email}
@@ -119,15 +191,16 @@ export default function LoginScreen({ navigation }) {
               autoCapitalize="none"
               onFocus={() => setFocusedInput('email')}
               onBlur={() => setFocusedInput(null)}
+              placeholderTextColor={darkMode ? '#a1a1aa' : '#94a3b8'}
             editable={!isLoading}
             />
           </View>
 
-        <View style={styles.inputContainer}>
+        <View style={dynamicStyles.inputContainer}>
             <TextInput
               style={[
-                styles.input,
-                focusedInput === 'password' && styles.inputFocused
+                dynamicStyles.input,
+                focusedInput === 'password' && dynamicStyles.inputFocused
               ]}
             placeholder="Password"
             value={password}
@@ -135,26 +208,27 @@ export default function LoginScreen({ navigation }) {
             secureTextEntry
               onFocus={() => setFocusedInput('password')}
               onBlur={() => setFocusedInput(null)}
+              placeholderTextColor={darkMode ? '#a1a1aa' : '#94a3b8'}
             editable={!isLoading}
             />
           </View>
 
           <TouchableOpacity 
-          style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
+          style={[dynamicStyles.loginButton, isLoading && dynamicStyles.loginButtonDisabled]}
             onPress={handleLogin}
           disabled={isLoading}
           >
-          <Text style={styles.loginButtonText}>
+          <Text style={dynamicStyles.loginButtonText}>
             {isLoading ? 'Signing in...' : 'Sign In'}
           </Text>
           </TouchableOpacity>
 
           <TouchableOpacity 
-          style={styles.signupButton}
+          style={dynamicStyles.signupButton}
             onPress={() => navigation.navigate('Signup')}
           disabled={isLoading}
           >
-          <Text style={styles.signupButtonText}>
+          <Text style={dynamicStyles.signupButtonText}>
             Don't have an account? Sign up
             </Text>
           </TouchableOpacity>
@@ -162,69 +236,3 @@ export default function LoginScreen({ navigation }) {
     </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
-  formContainer: {
-    flex: 1,
-    padding: 20,
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 32,
-    fontFamily: 'Poppins-Bold',
-    color: '#1a1a1a',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 16,
-    fontFamily: 'Poppins-Regular',
-    color: '#64748b',
-    marginBottom: 32,
-    textAlign: 'center',
-  },
-  inputContainer: {
-    marginBottom: 16,
-  },
-  input: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    fontFamily: 'Poppins-Regular',
-    color: '#1a1a1a',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  inputFocused: {
-    borderColor: '#4f46e5',
-  },
-  loginButton: {
-    backgroundColor: '#4f46e5',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  loginButtonDisabled: {
-    opacity: 0.7,
-  },
-  loginButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontFamily: 'Poppins-SemiBold',
-  },
-  signupButton: {
-    marginTop: 16,
-    alignItems: 'center',
-  },
-  signupButtonText: {
-    color: '#4f46e5',
-    fontSize: 14,
-    fontFamily: 'Poppins-Medium',
-  },
-});

@@ -1,10 +1,75 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useContext, useRef } from 'react';
 import { View, FlatList, Text, TouchableOpacity, StyleSheet, TextInput, KeyboardAvoidingView, Platform, SafeAreaView, Modal, Alert, ActivityIndicator, Image } from 'react-native';
 import { useFonts, Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold, Poppins_700Bold } from '@expo-google-fonts/poppins';
 import { Ionicons } from '@expo/vector-icons';
 import supabase from '../supabase/supabaseClient';
 import * as ImagePicker from 'expo-image-picker';
 import { decode } from 'base64-arraybuffer';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useIsFocused } from '@react-navigation/native';
+import { ThemeContext } from '../context/ThemeContext';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Animated } from 'react-native';
+
+const CHATS_CACHE_KEY = 'chats_cache';
+
+// Animated chat item for fade-in
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
+// Helper: get initial and color for avatar
+const getInitialAndColor = (name) => {
+  const initial = name && name.length > 0 ? name[0].toUpperCase() : '?';
+  // Simple hash for color
+  const colors = ['#4f46e5', '#06b6d4', '#f59e42', '#10b981', '#ef4444', '#a21caf'];
+  let hash = 0;
+  for (let i = 0; i < initial.length; i++) hash += initial.charCodeAt(i);
+  return { initial, color: colors[hash % colors.length] };
+};
+
+// Animated chat item as a component
+function AnimatedChatItem({ item, index, darkMode, onPress, onLongPress, formatDate }) {
+  const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  React.useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 350 + index * 40,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+  const { initial, color } = getInitialAndColor(item.other_user_username);
+  const showAvatar = !!item.other_user_photo;
+
+  return (
+    <Animated.View style={{ opacity: fadeAnim }}>
+      <TouchableOpacity
+        style={[
+          styles.chatItem,
+          darkMode && { backgroundColor: 'transparent' },
+        ]}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        activeOpacity={0.85}
+      >
+        {showAvatar ? (
+          <Image
+            source={{ uri: item.other_user_photo }}
+            style={[styles.avatarPhoto, darkMode && { borderColor: '#23232b' }]}
+          />
+        ) : (
+          <View style={[styles.avatarPhoto, { backgroundColor: color, justifyContent: 'center', alignItems: 'center', borderColor: '#fff' }]}> 
+            <Text style={styles.avatarInitial}>{initial}</Text>
+          </View>
+        )}
+        <View style={styles.chatInfo}>
+          <Text style={[styles.username, darkMode && { color: '#f1f5f9' }]} numberOfLines={1}>{item.other_user_username}</Text>
+          <Text style={[styles.lastMessage, darkMode && { color: '#a1a1aa' }]} numberOfLines={1}>{item.last_message || 'No messages'}</Text>
+        </View>
+        <Text style={[styles.timestamp, darkMode && { color: '#a1a1aa' }]}>{item.updated_at ? formatDate(item.updated_at) : ''}</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
 
 export default function MainScreen({ navigation }) {
   console.log('MainScreen rendering');
@@ -20,6 +85,8 @@ export default function MainScreen({ navigation }) {
   const [profilePhoto, setProfilePhoto] = useState(null);
   const [isProfileModalVisible, setIsProfileModalVisible] = useState(false);
   const [isPhotoModalVisible, setIsPhotoModalVisible] = useState(false);
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
 
   const [fontsLoaded] = useFonts({
     'Poppins-Regular': Poppins_400Regular,
@@ -28,151 +95,120 @@ export default function MainScreen({ navigation }) {
     'Poppins-Bold': Poppins_700Bold,
   });
 
+  const isFetching = useRef(false);
+  const isFocused = useIsFocused();
+  const { darkMode } = useContext(ThemeContext);
+
   useEffect(() => {
     navigation.setOptions({
-      headerRight: () => (
-        <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={styles.profilePhotoButton}
-            onPress={handleProfilePhotoPress}
-          >
-            <Image
-              source={
-                profilePhoto
-                  ? { uri: profilePhoto }
-                  : require('../assets/default-avatar.png')
-              }
-              style={styles.profilePhotoAdjusted}
-            />
-          </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.headerButton}
-            onPress={() => navigation.navigate('Settings')}
-        >
-            <Ionicons name="settings-outline" size={24} color="#4f46e5" />
-        </TouchableOpacity>
-        </View>
-      ),
-      headerTitleStyle: {
-        fontFamily: 'Poppins-SemiBold',
-        fontSize: 18,
-      },
+      headerShown: false,
     });
-    fetchCurrentUser();
-  }, [profilePhoto]);
+  }, [navigation]);
 
   useEffect(() => {
-    if (currentUserId) {
-      fetchChats();
-      subscribeToChats();
+    if (!currentUserId) {
+      fetchCurrentUser();
     }
+  }, []);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const channel = supabase
+      .channel('chats-main-screen-re-fix')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chats', filter: `or(user1_id.eq.${currentUserId},user2_id.eq.${currentUserId})` }, 
+        (payload) => {
+          console.log('Change received!', payload)
+          fetchChats();
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Real-time channel subscribed!');
+        }
+      });
+
+        fetchChats();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [currentUserId]);
 
-  // Get current user
+  useEffect(() => {
+    if (isFocused && currentUserId) {
+      fetchChats();
+    }
+  }, [isFocused]);
+
   const fetchCurrentUser = async () => {
-    console.log('Fetching current user...');
     try {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      console.log('User data:', user);
-      
-      if (error) {
-        console.error('Error fetching user:', error.message);
-        return;
-      }
-      
+      const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setCurrentUserId(user.id);
-        // Fetch user profile including photo
-        const { data: profile, error: profileError } = await supabase
-          .from('users')
-          .select('profile_photo')
-          .eq('id', user.id)
-          .single();
-
-        if (!profileError && profile?.profile_photo) {
-          setProfilePhoto(profile.profile_photo);
+        setEmail(user.email);
+        const { data: profile } = await supabase.from('users').select('profile_photo, username').eq('id', user.id).single();
+        if (profile) {
+          const photoUrl = profile.profile_photo ? `${profile.profile_photo}?t=${Date.now()}` : null;
+          setProfilePhoto(photoUrl);
+          setUsername(profile.username);
         }
+      } else {
+        await AsyncStorage.removeItem(CHATS_CACHE_KEY);
+        navigation.replace('Login');
       }
     } catch (error) {
-      console.error('Error in fetchCurrentUser:', error.message);
-    } finally {
-      setIsLoading(false);
+      console.error("Error fetching user:", error.message);
     }
   };
 
-  // Fetch chats
   const fetchChats = async () => {
-    console.log('Fetching chats for user:', currentUserId);
+    if (isFetching.current || !currentUserId) return;
+    isFetching.current = true;
+    if (chats.length === 0) {
+      setIsLoading(true);
+    }
     try {
-      const { data: chats, error } = await supabase
+      const { data: chatsData, error } = await supabase
         .from('chats')
         .select(`
           id,
-          user1_id,
-          user2_id,
           updated_at,
-          last_message
+          last_message,
+          user1:users!user1_id(id, username, profile_photo),
+          user2:users!user2_id(id, username, profile_photo)
         `)
         .or(`user1_id.eq.${currentUserId},user2_id.eq.${currentUserId}`)
         .order('updated_at', { ascending: false });
-
+      console.log('Fetched chatsData:', chatsData);
       if (error) {
         console.error('Error fetching chats:', error.message);
+        Alert.alert('Error', 'Could not refresh your chats.');
         return;
       }
-
-      // Fetch usernames for each chat
-      const userIds = Array.from(new Set(chats.flatMap(chat => [chat.user1_id, chat.user2_id])));
-      const { data: users, error: usersError } = await supabase
-        .from('users')
-        .select('id, username')
-        .in('id', userIds);
-
-      if (usersError) {
-        console.error('Error fetching users:', usersError.message);
-        return;
-      }
-
-      // Process chats to get the other user's info
-      const processedChats = chats.map(chat => {
-        const otherUserId = chat.user1_id === currentUserId ? chat.user2_id : chat.user1_id;
-        const otherUser = users.find(u => u.id === otherUserId) || { username: 'Unknown' };
+      const processedChats = chatsData.map(chat => {
+        const otherUser = chat.user1.id === currentUserId ? chat.user2 : chat.user1;
         return {
           id: chat.id,
-          otherUserId,
-          otherUsername: otherUser.username,
-          lastMessage: chat.last_message,
-          updatedAt: chat.updated_at
+          updated_at: chat.updated_at,
+          last_message: chat.last_message,
+          other_user_id: otherUser.id,
+          other_user_username: otherUser.username,
+          other_user_photo: otherUser.profile_photo,
         };
       });
-
-      console.log('Fetched chats:', processedChats);
+      console.log('Processed chats:', processedChats);
       setChats(processedChats);
       setFilteredChats(processedChats);
-    } catch (error) {
-      console.error('Error in fetchChats:', error.message);
+      await AsyncStorage.setItem(CHATS_CACHE_KEY, JSON.stringify(processedChats));
+    } catch (err) {
+      console.error('Error in fetchChats function:', err.message);
+    } finally {
+      setIsLoading(false);
+      isFetching.current = false;
     }
   };
 
-  const subscribeToChats = () => {
-    const subscription = supabase
-      .channel('chats')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'chats',
-        filter: `or(user1_id.eq.${currentUserId},user2_id.eq.${currentUserId})`,
-      }, () => {
-        fetchChats();
-      })
-      .subscribe();
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  };
-
-  // Search for users
   const searchUsers = async (username) => {
     try {
       const { data, error } = await supabase
@@ -198,7 +234,7 @@ export default function MainScreen({ navigation }) {
       setFilteredChats(chats);
     } else {
       const filtered = chats.filter(chat => 
-        chat.otherUsername.toLowerCase().includes(searchQuery.toLowerCase())
+        chat.other_user_username.toLowerCase().includes(searchQuery.toLowerCase())
       );
       setFilteredChats(filtered);
     }
@@ -207,18 +243,19 @@ export default function MainScreen({ navigation }) {
   const handleChatPress = (chat) => {
     navigation.navigate('ChatScreen', {
       chatId: chat.id,
-      contactId: chat.otherUserId,
-      contactName: chat.otherUsername,
+      contactId: chat.other_user_id,
+      contactName: chat.other_user_username,
     });
   };
 
   const handleLogout = async () => {
-    try {
       const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+    if (!error) {
+      await AsyncStorage.removeItem(CHATS_CACHE_KEY);
       navigation.replace('Login');
-    } catch (error) {
-      console.error('Error signing out:', error.message);
+    } else {
+      console.error('Error logging out:', error.message);
+      Alert.alert('Error', 'Could not log out.');
     }
   };
 
@@ -229,7 +266,6 @@ export default function MainScreen({ navigation }) {
 
   const handleSearchResultPress = async (item) => {
     try {
-      // Create a new chat
       const { data: chatData, error: chatError } = await supabase
         .from('chats')
         .insert([
@@ -278,30 +314,46 @@ export default function MainScreen({ navigation }) {
     }
   };
 
-  const renderChatItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.chatItem}
+  const handleLongPressChat = (chatId) => {
+    Alert.alert(
+      'Delete Chat',
+      'Are you sure you want to permanently delete this chat and all its messages?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => deleteChat(chatId) },
+      ]
+    );
+  };
+
+  const deleteChat = async (chatId) => {
+    try {
+      await supabase.from('messages').delete().eq('chat_id', chatId);
+      await supabase.from('chats').delete().eq('id', chatId);
+
+      setChats((prevChats) => prevChats.filter((chat) => chat.id !== chatId));
+    } catch (error) {
+      console.error('Error deleting chat:', error.message);
+      Alert.alert('Error', 'Failed to delete chat.');
+    }
+  };
+
+  const renderChatItem = ({ item, index }) => (
+    <AnimatedChatItem
+      item={item}
+      index={index}
+      darkMode={darkMode}
       onPress={() => handleChatPress(item)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.avatarContainer}>
-        <Text style={styles.avatarText}>
-          {item.otherUsername.charAt(0).toUpperCase()}
-        </Text>
-      </View>
-      <View style={styles.chatInfo}>
-        <View style={styles.chatHeader}>
-          <Text style={styles.username}>{item.otherUsername}</Text>
-          <Text style={styles.timestamp}>{formatDate(item.updatedAt)}</Text>
-        </View>
-        <Text style={styles.lastMessage} numberOfLines={1}>
-          {item.lastMessage || 'No messages yet'}
-        </Text>
-      </View>
-    </TouchableOpacity>
+      onLongPress={() => handleLongPressChat(item.id)}
+      formatDate={formatDate}
+    />
+  );
+
+  const renderSeparator = () => (
+    <View style={[styles.chatSeparator, darkMode && { backgroundColor: '#23232b' }]} />
   );
 
   const handleProfilePhotoPress = () => {
+    console.log('Profile photo pressed, opening modal');
     setIsProfileModalVisible(true);
   };
 
@@ -325,7 +377,7 @@ export default function MainScreen({ navigation }) {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: 'Images',
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.7,
@@ -354,13 +406,12 @@ export default function MainScreen({ navigation }) {
           .from('users')
           .update({
             profile_photo: publicUrl,
-            updated_at: new Date().toISOString(),
           })
           .eq('id', currentUserId);
 
         if (updateError) throw updateError;
 
-        setProfilePhoto(publicUrl);
+        await fetchCurrentUser();
       }
     } catch (error) {
       console.error('Error updating profile photo:', error.message);
@@ -368,357 +419,221 @@ export default function MainScreen({ navigation }) {
     }
   };
 
-  if (!fontsLoaded || isLoading) {
-    console.log('Loading state:', { fontsLoaded, isLoading });
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4f46e5" />
-        <Text style={styles.loadingText}>Loading chats...</Text>
-      </View>
-    );
+  if (!fontsLoaded) {
+    return <View style={[styles.loadingContainer, darkMode && { backgroundColor: '#18181b' }]}><ActivityIndicator size="large" /></View>;
   }
 
-  console.log('Rendering main content');
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Messages</Text>
-          <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-            <Ionicons name="log-out-outline" size={24} color="#4f46e5" />
+    <SafeAreaView style={[styles.safeArea, darkMode && { backgroundColor: '#18181b' }]}>
+      {/* Gradient accent at top */}
+      <LinearGradient
+        colors={darkMode ? ['#23232b', '#23232b'] : ['#f1f5f9', '#e0e7ef']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.topGradient}
+      />
+      <View style={[styles.container, darkMode && { backgroundColor: '#18181b' }]}>
+        {/* Header */}
+        <View style={[styles.header, darkMode && { backgroundColor: '#23232b' }]}>
+          <View>
+            <Text style={[styles.appTitle, { color: darkMode ? '#fff' : '#4f46e5' }]}>ChatApp</Text>
+          </View>
+          <View style={[styles.headerIconsContainer, darkMode && { flexDirection: 'row', alignItems: 'center' }]}>
+            <TouchableOpacity onPress={handleProfilePhotoPress} style={[styles.headerButton, darkMode && { paddingLeft: 16 }]}>
+              <Image source={profilePhoto ? { uri: profilePhoto } : require('../assets/default-avatar.png')} style={[styles.profilePhoto, darkMode && { backgroundColor: '#27272a' }]} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => navigation.navigate('SettingsScreen')} style={[styles.headerButton, darkMode && { paddingLeft: 16 }]}>
+              <Ionicons name="settings-outline" size={24} color="#4f46e5" />
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.headerButton, darkMode && { paddingLeft: 16 }]} onPress={handleLogout}>
+              <Ionicons name="log-out-outline" size={28} color="#ef4444" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={[styles.messagesHeader, darkMode && { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, marginTop: 16, marginBottom: 8 }]}>
+          <Text style={[styles.messagesTitle, darkMode && { color: '#f1f5f9' }]}>Messages</Text>
+          <TouchableOpacity>
+            <Ionicons name="archive-outline" size={22} color="#a1a1aa" />
           </TouchableOpacity>
         </View>
 
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#64748b" style={styles.searchIcon} />
+        <View style={[styles.searchContainer, darkMode && { backgroundColor: '#23232b', borderColor: '#27272a' }]}>
+          <Ionicons name="search-outline" size={20} color="#a1a1aa" />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, darkMode && { color: '#f1f5f9' }]}
             placeholder="Search chats..."
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor="#a1a1aa"
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
         </View>
 
+        {isLoading ? (
+          <View style={[styles.loadingContainer, darkMode && { backgroundColor: '#18181b' }]}><ActivityIndicator size="large" color="#4f46e5" /></View>
+        ) : (
         <FlatList
           data={filteredChats}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={{ paddingBottom: 100 }}
+          ListEmptyComponent={<View style={[styles.emptyContainer, darkMode && { backgroundColor: '#18181b' }]}><Text style={[styles.emptyText, darkMode && { color: '#a1a1aa' }]}>No chats yet.</Text></View>}
           renderItem={renderChatItem}
-          contentContainerStyle={styles.listContainer}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No chats found</Text>
-            </View>
-          }
+          ItemSeparatorComponent={renderSeparator}
         />
-
-        <Modal
-          visible={isModalVisible}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={() => setIsModalVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>New Chat</Text>
-                <TouchableOpacity
-                  onPress={() => setIsModalVisible(false)}
-                  style={styles.closeButton}
-                >
-                  <Ionicons name="close" size={24} color="#64748b" />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.modalBody}>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="Enter username..."
-                  placeholderTextColor="#94a3b8"
-                  value={newChatUsername}
-                  onChangeText={(text) => {
-                    setNewChatUsername(text);
-                    searchUsers(text);
-                  }}
-                />
-
-                <FlatList
-                  data={searchResults}
-                  keyExtractor={(item) => item.id}
-                  renderItem={({ item }) => (
-                    <TouchableOpacity
-                      style={styles.searchResultItem}
-                      onPress={() => {
-                        setIsModalVisible(false);
-                        setNewChatUsername('');
-                        navigation.navigate('StartChatScreen', {
-                          contactId: item.id,
-                          contactName: item.username,
-                        });
-                      }}
-                    >
-                      <View style={styles.avatarContainer}>
-                        <Text style={styles.avatarText}>
-                          {item.username.charAt(0).toUpperCase()}
-                        </Text>
-                      </View>
-                      <View style={styles.contactInfo}>
-                        <Text style={styles.username}>{item.username}</Text>
-                        <Text style={styles.email}>{item.email}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  )}
-                  ListEmptyComponent={
-                    <Text style={styles.noResultsText}>
-                      {newChatUsername.trim() ? 'No users found' : 'Start typing to search'}
-                    </Text>
-                  }
-                />
-              </View>
-            </View>
-          </View>
-        </Modal>
+        )}
       </View>
 
-      {/* Floating Action Button */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={handleNewChat}
-        activeOpacity={0.8}
+      {/* Gradient FAB */}
+      <LinearGradient
+        colors={['#4f46e5', '#06b6d4']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.fabGradient}
       >
-        <Ionicons name="add" size={32} color="#ffffff" />
-      </TouchableOpacity>
+        <TouchableOpacity style={styles.fabTouchable} onPress={handleNewChat} activeOpacity={0.85}>
+          <Ionicons name="add" size={32} color="#FFFFFF" />
+        </TouchableOpacity>
+      </LinearGradient>
 
-      {/* Profile Options Modal */}
       <Modal
         visible={isProfileModalVisible}
         transparent={true}
         animationType="slide"
-        onRequestClose={() => setIsProfileModalVisible(false)}
+        onRequestClose={() => {
+          console.log('Profile modal closed');
+          setIsProfileModalVisible(false);
+        }}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setIsProfileModalVisible(false)}
-        >
-          <View style={styles.modalContent}>
-            <TouchableOpacity
-              style={styles.modalOption}
-              onPress={handleViewProfile}
-            >
-              <Ionicons name="person-outline" size={24} color="#4f46e5" />
-              <Text style={styles.modalOptionText}>View Profile</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.modalOption}
-              onPress={handleViewPhoto}
-            >
-              <Ionicons name="image-outline" size={24} color="#4f46e5" />
-              <Text style={styles.modalOptionText}>View Photo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.modalOption}
-              onPress={handleChangePhoto}
-            >
-              <Ionicons name="camera-outline" size={24} color="#4f46e5" />
-              <Text style={styles.modalOptionText}>Change Photo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.modalOption, styles.cancelOption]}
-              onPress={() => setIsProfileModalVisible(false)}
-            >
-              <Text style={[styles.modalOptionText, { color: '#64748b' }]}>Cancel</Text>
-            </TouchableOpacity>
+        <View style={[styles.modalOverlay, darkMode && { backgroundColor: 'rgba(24,24,27,0.95)' }]}>
+          <View style={[styles.modalContent, darkMode && { backgroundColor: '#23232b' }]}>
+            <View style={[styles.modalHeader, darkMode && { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }]}>
+              <Text style={[styles.modalTitle, darkMode && { fontSize: 24, fontFamily: 'Poppins-Bold', color: '#f1f5f9' }]}>Profile Options</Text>
+              <TouchableOpacity style={[styles.closeButton, darkMode && { padding: 8 }]} onPress={() => setIsProfileModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#f1f5f9" />
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.modalBody, darkMode && { flex: 1 }]}>
+              <TouchableOpacity
+                style={[styles.modalOption, darkMode && { borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }]}
+                onPress={handleViewProfile}
+              >
+                <Ionicons name="person-outline" size={24} color="#4f46e5" />
+                <Text style={[styles.modalOptionText, darkMode && { color: '#f1f5f9' }]}>View Profile</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalOption, darkMode && { borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }]}
+                onPress={handleViewPhoto}
+              >
+                <Ionicons name="image-outline" size={24} color="#4f46e5" />
+                <Text style={[styles.modalOptionText, darkMode && { color: '#f1f5f9' }]}>View Photo</Text>
+              </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalOption, darkMode && { borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }]}
+                  onPress={handleChangePhoto}
+                >
+                  <Ionicons name="camera-outline" size={24} color="#4f46e5" />
+                  <Text style={[styles.modalOptionText, darkMode && { color: '#f1f5f9' }]}>Change Photo</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalOption, darkMode && { borderBottomWidth: 0, justifyContent: 'center' }]}
+                  onPress={() => setIsProfileModalVisible(false)}
+                >
+                  <Text style={[styles.modalOptionText, darkMode && { color: '#f1f5f9' }]}>Cancel</Text>
+                </TouchableOpacity>
+            </View>
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
 
-      {/* Photo View Modal */}
       <Modal
         visible={isPhotoModalVisible}
         transparent={true}
         onRequestClose={() => setIsPhotoModalVisible(false)}
       >
-        <TouchableOpacity
-          style={styles.photoModalOverlay}
-          activeOpacity={1}
-          onPress={() => setIsPhotoModalVisible(false)}
-        >
+        <View style={[styles.photoModalOverlay, darkMode && { backgroundColor: 'rgba(0,0,0,0.9)' }]}>
           <Image
             source={
               profilePhoto
                 ? { uri: profilePhoto }
                 : require('../assets/default-avatar.png')
             }
-            style={styles.zoomedPhoto}
+            style={[styles.zoomedPhoto, darkMode && { backgroundColor: '#fff' }]}
             resizeMode="contain"
           />
-        </TouchableOpacity>
-      </Modal>
+        </View>
+        </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-  },
-  loadingText: {
-    fontSize: 16,
-    fontFamily: 'Poppins-Regular',
-    color: '#64748b',
-  },
-  container: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
+  safeArea: { flex: 1, backgroundColor: '#f8fafc' },
+  container: { flex: 1, backgroundColor: '#f8fafc' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 20,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    paddingTop: 32,
+    paddingBottom: 16,
+    backgroundColor: 'transparent',
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    zIndex: 1,
   },
-  title: {
-    fontSize: 28,
+  appTitle: {
     fontFamily: 'Poppins-Bold',
-    color: '#1a1a1a',
+    fontSize: 32,
+    letterSpacing: 1,
   },
-  logoutButton: {
-    padding: 8,
-  },
+  headerIconsContainer: { flexDirection: 'row', alignItems: 'center' },
+  headerButton: { paddingLeft: 16 },
+  profilePhoto: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#f1f5f9' },
+  messagesHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, marginTop: 16, marginBottom: 8 },
+  messagesTitle: { fontFamily: 'Poppins-SemiBold', fontSize: 18, color: '#1a1a1a' },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    marginHorizontal: 24,
-    marginVertical: 16,
+    backgroundColor: '#fff',
+    borderRadius: 12,
     paddingHorizontal: 16,
-    borderRadius: 16,
+    marginHorizontal: 24,
+    marginVertical: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-  },
-  searchIcon: {
-    marginRight: 12,
   },
   searchInput: {
     flex: 1,
-    height: 48,
-    fontSize: 16,
     fontFamily: 'Poppins-Regular',
+    fontSize: 16,
     color: '#1a1a1a',
+    paddingVertical: 12,
+    marginLeft: 12,
+    backgroundColor: 'transparent',
   },
-  listContainer: {
-    paddingHorizontal: 24,
-    paddingBottom: 24,
-  },
-  chatItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    padding: 16,
-    marginBottom: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  avatarContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#4f46e5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  avatarText: {
-    color: '#ffffff',
-    fontSize: 20,
-    fontFamily: 'Poppins-SemiBold',
-  },
-  chatInfo: {
-    flex: 1,
-  },
-  chatHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  username: {
-    fontSize: 16,
-    fontFamily: 'Poppins-SemiBold',
-    color: '#1a1a1a',
-  },
-  timestamp: {
-    fontSize: 12,
-    fontFamily: 'Poppins-Regular',
-    color: '#64748b',
-  },
-  lastMessage: {
-    fontSize: 14,
-    fontFamily: 'Poppins-Regular',
-    color: '#64748b',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 32,
-  },
-  emptyText: {
-    fontSize: 16,
-    fontFamily: 'Poppins-Regular',
-    color: '#64748b',
-  },
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#4f46e5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-  },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 50 },
+  emptyText: { fontFamily: 'Poppins-Regular', fontSize: 16, color: '#64748b' },
+  floatingActionButton: { position: 'absolute', bottom: 30, right: 24, width: 60, height: 60, borderRadius: 30, backgroundColor: '#4f46e5', justifyContent: 'center', alignItems: 'center', elevation: 8 },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
+    width: '100%',
+    minHeight: 250,
+    maxHeight: '60%',
+    overflow: 'visible',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -762,33 +677,79 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 16,
   },
-  headerRight: {
+  headerRightContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingRight: 8,
   },
   profilePhotoButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 2,
-    borderColor: '#4f46e5',
-    marginRight: 8,
-    backgroundColor: '#fff',
-    alignSelf: 'center',
-  },
-  profilePhotoAdjusted: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 2,
-    borderColor: '#4f46e5',
-    marginRight: 8,
-    backgroundColor: '#fff',
-    alignSelf: 'center',
-  },
-  headerButton: {
     marginRight: 16,
-    padding: 4,
+  },
+  chatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: 'transparent',
+    borderRadius: 12,
+    marginHorizontal: 0,
+    marginBottom: 0,
+    shadowColor: 'transparent',
+    elevation: 0,
+    minHeight: 56,
+  },
+  avatarPhoto: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    marginRight: 12,
+    backgroundColor: '#f1f5f9',
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+  },
+  avatarInitial: {
+    color: '#fff',
+    fontFamily: 'Poppins-Bold',
+    fontSize: 20,
+  },
+  chatInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  username: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 16,
+    color: '#1a1a1a',
+    marginBottom: 2,
+  },
+  lastMessage: {
+    fontFamily: 'Poppins-Regular',
+    fontSize: 13,
+    color: '#64748b',
+  },
+  timestamp: {
+    fontFamily: 'Poppins-Regular',
+    fontSize: 11,
+    color: '#a1a1aa',
+    alignSelf: 'flex-start',
+    paddingTop: 0,
+    marginLeft: 8,
+  },
+  chatSeparator: {
+    height: 1,
+    backgroundColor: '#e2e8f0',
+    marginLeft: 68,
+  },
+  photoModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  zoomedPhoto: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#fff',
   },
   modalOption: {
     flexDirection: 'row',
@@ -807,14 +768,31 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0,
     justifyContent: 'center',
   },
-  photoModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+  topGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 100,
+    zIndex: 0,
+  },
+  fabGradient: {
+    position: 'absolute',
+    bottom: 30,
+    right: 24,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
+    elevation: 8,
+    zIndex: 2,
   },
-  zoomedPhoto: {
-    width: '100%',
-    height: '100%',
+  fabTouchable: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
